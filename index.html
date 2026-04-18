@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>運転代行日報アプリ v12</title>
+    <style>
+        /* はみ出し防止の基本設定 */
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        :root {
+            --bg-color: #0f0f0f;
+            --card-bg: #1a1a1a;
+            --text-color: #f0f0f0;
+            --accent-color: #00e676; 
+            --sub-color: #2979ff;    
+            --delete-color: #ff5252;
+            --border-radius: 10px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: sans-serif;
+            margin: 0;
+            padding: 8px;
+            padding-bottom: 120px;
+            overflow-x: hidden;
+        }
+
+        h1 { text-align: center; font-size: 1.1rem; color: var(--accent-color); margin: 10px 0; }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid #333;
+            border-radius: var(--border-radius);
+            padding: 10px; /* 内部余白をさらにスリムに */
+            margin-bottom: 15px;
+            width: 100%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #444;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            gap: 5px;
+        }
+
+        .trip-no { font-weight: bold; font-size: 1.1rem; color: var(--accent-color); }
+
+        .btn-delete {
+            background-color: transparent;
+            color: var(--delete-color);
+            border: 1px solid var(--delete-color);
+            padding: 4px 6px;
+            font-size: 0.7rem;
+            border-radius: 5px;
+        }
+
+        .input-group { margin-bottom: 12px; width: 100%; }
+        label { display: block; font-size: 0.8rem; margin-bottom: 4px; color: #aaa; }
+
+        /* 入力行の設定 */
+        .input-row {
+            display: flex;
+            gap: 5px;
+            width: 100%;
+        }
+
+        /* 2カラムグリッドの設定（はみ出し防止を強化） */
+        .flex-grid {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+            justify-content: space-between;
+        }
+
+        .flex-col {
+            flex: 1;
+            min-width: 0; /* これが重要：子要素の幅を無視して縮小可能にする */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 入力欄の共通スタイル */
+        input[type="text"], input[type="number"], input[type="time"], select {
+            width: 100%;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: white;
+            font-size: 1.1rem;
+            padding: 10px 4px; /* 左右のパディングを最小限に */
+            border-radius: 8px;
+            text-align: center;
+            appearance: none; /* ブラウザ標準の装飾をリセット */
+        }
+
+        /* 時刻入力専用の微調整（はみ出し対策） */
+        input[type="time"] {
+            font-size: 0.95rem; /* 少しだけ小さくして並びを安定させる */
+            padding: 10px 2px;
+            min-width: 0;
+        }
+
+        input[type="text"] { text-align: left; padding-left: 10px; }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-gps {
+            background-color: var(--sub-color);
+            color: white;
+            padding: 0;
+            font-size: 1.3rem;
+            min-width: 44px;
+            flex-shrink: 0;
+        }
+
+        .btn-now {
+            background-color: var(--accent-color);
+            color: #000;
+            width: 100%;
+            font-size: 0.75rem;
+            margin-top: 4px;
+            height: 36px;
+        }
+
+        .sub-label {
+            font-size: 0.7rem;
+            color: #888;
+            margin-bottom: 2px;
+            text-align: center;
+        }
+
+        .inner-box {
+            background: #111;
+            padding: 6px;
+            border-radius: 8px;
+            border: 1px solid #222;
+            width: 100%;
+        }
+
+        .wait-display {
+            text-align: center;
+            color: var(--accent-color);
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-top: 6px;
+        }
+
+        .btn-add { 
+            background-color: #fff; 
+            color: #000; 
+            position: fixed; 
+            bottom: 20px; 
+            left: 4%; 
+            width: 92%; 
+            height: 50px;
+            font-size: 1.1rem; 
+            z-index: 100;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🚗 運転代行日報</h1>
+    <div id="cards-container"></div>
+    <button class="btn btn-add" onclick="addNewCard()">＋ 新規運行を追加</button>
+
+    <script>
+        let uniqueIdCounter = 0;
+
+        function renumberCards() {
+            const cards = document.querySelectorAll('.card');
+            cards.forEach((card, index) => {
+                const noLabel = card.querySelector('.trip-no');
+                if (noLabel) noLabel.innerText = `No.${index + 1}`;
+            });
+        }
+
+        function addNewCard() {
+            uniqueIdCounter++;
+            const container = document.getElementById('cards-container');
+            const card = document.createElement('div');
+            card.className = 'card';
+            const sid = uniqueIdCounter;
+            card.id = `card-sys-${sid}`;
+            
+            card.innerHTML = `
+                <div class="card-header">
+                    <span class="trip-no">No.--</span>
+                    <select style="width: 65px; font-size: 0.85rem; padding: 4px;">
+                        <option>代行</option>
+                        <option>随伴</option>
+                    </select>
+                    <div style="flex:1"></div>
+                    <button class="btn-delete" onclick="deleteCard(${sid})">× 削除</button>
+                </div>
+
+                <div class="input-group">
+                    <label>【1】出発地</label>
+                    <div class="input-row">
+                        <input type="text" id="start-loc-${sid}" placeholder="店名・住所">
+                        <button class="btn btn-gps" onclick="setGPS('start-loc-${sid}')">📍</button>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>待機時間の記録</label>
+                    <div class="inner-box">
+                        <div class="flex-grid">
+                            <div class="flex-col">
+                                <span class="sub-label">到着時間</span>
+                                <input type="time" id="wait-arr-${sid}" onchange="calcWait(${sid})">
+                                <button class="btn btn-now" onclick="setCurrentTime('wait-arr-${sid}');calcWait(${sid})">🕒今</button>
+                            </div>
+                            <div class="flex-col">
+                                <span class="sub-label">出発時間</span>
+                                <input type="time" id="wait-dep-${sid}" onchange="calcWait(${sid})">
+                                <button class="btn btn-now" onclick="setCurrentTime('wait-dep-${sid}');calcWait(${sid})">🕒今</button>
+                            </div>
+                        </div>
+                        <div class="wait-display" id="wait-res-${sid}">待機時間：0 分</div>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>【2】開始時の距離 (km)</label>
+                    <input type="number" step="0.1" placeholder="0.0">
+                </div>
+
+                <div class="input-group">
+                    <label>【3】経由地</label>
+                    <div class="input-row">
+                        <input type="text" id="via-loc-${sid}" placeholder="経由地">
+                        <button class="btn btn-gps" onclick="setGPS('via-loc-${sid}')">📍</button>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>【4】最終到着地</label>
+                    <div class="input-row">
+                        <input type="text" id="end-loc-${sid}" placeholder="到着地">
+                        <button class="btn btn-gps" onclick="setGPS('end-loc-${sid}')">📍</button>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>最終到着時間</label>
+                    <div class="input-row">
+                        <input type="time" id="end-time-${sid}">
+                        <button class="btn btn-now" style="margin-top:0; height:41px; font-size: 0.9rem;" onclick="setCurrentTime('end-time-${sid}')">🕒今</button>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>【5】最終到着距離 (km)</label>
+                    <input type="number" step="0.1" placeholder="0.0">
+                </div>
+
+                <div class="inner-box" style="border: 1px solid var(--accent-color);">
+                    <div class="flex-grid">
+                        <div class="flex-col">
+                            <span class="sub-label" style="color:var(--accent-color)">実走行km</span>
+                            <input type="number" step="0.1" placeholder="0.0">
+                        </div>
+                        <div class="flex-col">
+                            <span class="sub-label" style="color:var(--accent-color)">料金 (円)</span>
+                            <input type="number" step="100" placeholder="0">
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+            renumberCards();
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        function deleteCard(sid) {
+            const card = document.getElementById(`card-sys-${sid}`);
+            if (confirm(`記録を削除しますか？`)) {
+                card.style.opacity = '0';
+                setTimeout(() => {
+                    card.remove();
+                    renumberCards();
+                }, 200);
+            }
+        }
+
+        function setCurrentTime(elementId) {
+            const now = new Date();
+            document.getElementById(elementId).value = now.getHours().toString().padStart(2, '0') + ':' + 
+                                                       now.getMinutes().toString().padStart(2, '0');
+        }
+
+        function calcWait(sid) {
+            const arr = document.getElementById(`wait-arr-${sid}`).value;
+            const dep = document.getElementById(`wait-dep-${sid}`).value;
+            if (arr && dep) {
+                const start = new Date(`2000-01-01T${arr}:00`);
+                const end = new Date(`2000-01-01T${dep}:00`);
+                let diff = (end - start) / (1000 * 60);
+                if (diff < 0) diff += 1440;
+                document.getElementById(`wait-res-${sid}`).innerText = `待機時間：${diff} 分`;
+            }
+        }
+
+        async function setGPS(elementId) {
+            const inputField = document.getElementById(elementId);
+            const originalVal = inputField.value;
+            inputField.value = "取得中...";
+
+            navigator.geolocation.getCurrentPosition(
+                async (p) => {
+                    try {
+                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}&addressdetails=1`, {
+                            headers: { 'Accept-Language': 'ja' }
+                        });
+                        const data = await res.json();
+                        if (data.address) {
+                            const a = data.address;
+                            const city = a.city || a.town || a.village || "";
+                            const district = a.city_district || "";
+                            const suburb = a.suburb || "";
+                            const neighborhood = a.neighbourhood || a.quarter || a.sub-neighbourhood || "";
+                            const road = a.road || "";
+                            const addrString = city + district + suburb + neighborhood + road;
+                            const building = a.amenity || a.shop || a.building || a.office || "";
+                            inputField.value = building ? `${building} (${addrString})` : addrString;
+                        }
+                    } catch (e) { 
+                        inputField.value = "エラー"; 
+                    }
+                },
+                (err) => { 
+                    inputField.value = originalVal;
+                    alert("GPSをオンにしてください"); 
+                },
+                { enableHighAccuracy: true, timeout: 7000 }
+            );
+        }
+
+        addNewCard();
+    </script>
+</body>
+</html>
